@@ -1,0 +1,1626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GM Screen Creator</title>
+<style>
+:root {
+  --bg: #151515;
+  --surface: #1e1230;
+  --surface-raised: #2a1a42;
+  --purple: #7B2FBE;
+  --purple-mid: rgba(123,47,190,0.45);
+  --accent: #C9A227;
+  --accent-dim: rgba(201,162,39,0.12);
+  --accent-border: rgba(201,162,39,0.45);
+  --text: #f0ece8;
+  --text-muted: #9a82b8;
+  --border: #3a2058;
+  --radius: 6px;
+  --font-ui: system-ui, -apple-system, sans-serif;
+  --font-display: Georgia, 'Times New Roman', serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+body.builder-mode { align-items: stretch; }
+
+/* ── Header ── */
+.app-header {
+  width: 100%;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.app-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--accent);
+}
+.project-name-badge {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 12px;
+  display: none;
+}
+
+/* ── Wizard container ── */
+.wizard {
+  width: 100%;
+  max-width: 540px;
+  padding: 36px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* ── Progress ── */
+.progress-track { display: flex; align-items: center; gap: 6px; }
+.progress-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 0.2s, transform 0.2s;
+}
+.progress-dot.active { background: var(--accent); transform: scale(1.25); }
+.progress-dot.done   { background: var(--accent); opacity: 0.35; }
+.progress-label { margin-left: auto; font-size: 0.72rem; color: var(--text-muted); }
+
+/* ── Step ── */
+.step { display: none; flex-direction: column; gap: 22px; }
+.step.active { display: flex; }
+.step-eyebrow  { font-size: 0.7rem; color: var(--text-muted); letter-spacing: 0.04em; }
+.step-question { font-family: var(--font-display); font-size: 1.45rem; line-height: 1.3; }
+.step-hint     { font-size: 0.8rem; color: var(--text-muted); margin-top: -12px; }
+
+/* ── Option cards ── */
+.options-grid { display: grid; gap: 10px; }
+.cols-2 { grid-template-columns: 1fr 1fr; }
+.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.option-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  text-align: center;
+  transition: border-color 0.14s, background 0.14s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.option-card:hover   { border-color: var(--accent-border); background: var(--surface-raised); }
+.option-card.selected { border-color: var(--accent); background: var(--purple-mid); }
+.option-label { font-size: 0.88rem; font-weight: 600; }
+.option-sub   { font-size: 0.72rem; color: var(--text-muted); line-height: 1.4; }
+
+/* Panel mini-previews */
+.panel-vis { display: flex; align-items: center; justify-content: center; gap: 3px; height: 40px; }
+.pv-block  { background: var(--accent); opacity: 0.55; border-radius: 2px; flex-shrink: 0; }
+
+/* ── Text input ── */
+.text-input {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  padding: 13px 15px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.14s;
+}
+.text-input::placeholder { color: var(--text-muted); }
+.text-input:focus { border-color: var(--accent); }
+
+/* ── Paper custom inputs ── */
+.unit-toggle { display: flex; border: 1.5px solid var(--border); border-radius: var(--radius); overflow: hidden; align-self: flex-start; }
+.unit-btn {
+  background: var(--surface);
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  padding: 7px 14px;
+  transition: background 0.14s, color 0.14s;
+}
+.unit-btn.active { background: var(--purple-mid); color: var(--accent); }
+.dim-row { display: flex; align-items: center; gap: 10px; }
+.dim-row .text-input { width: 100px; }
+.dim-sep { color: var(--text-muted); font-size: 1.1rem; }
+.dim-unit-label { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
+
+/* ── Panel count grid ── */
+.count-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
+.custom-count-card {
+  grid-column: span 4;
+  display: flex; align-items: center; gap: 14px;
+  justify-content: flex-start; flex-direction: row; padding: 12px 16px;
+}
+.custom-count-card input { width: 72px; padding: 8px 10px; font-size: 0.9rem; }
+
+/* ── Nav ── */
+.nav-row { display: flex; gap: 10px; justify-content: flex-end; padding-top: 4px; }
+.btn {
+  border: none; border-radius: var(--radius); cursor: pointer;
+  font-family: var(--font-ui); font-size: 0.88rem; font-weight: 500;
+  padding: 11px 22px; transition: opacity 0.15s;
+}
+.btn:disabled { opacity: 0.28; cursor: default; }
+.btn-ghost { background: transparent; border: 1.5px solid var(--border); color: var(--text-muted); }
+.btn-ghost:hover:not(:disabled) { border-color: var(--text-muted); color: var(--text); }
+.btn-primary { background: var(--accent); color: #111; font-weight: 600; }
+.btn-primary:hover:not(:disabled) { opacity: 0.85; }
+
+/* ── Summary ── */
+.summary-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.summary-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 13px 18px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background 0.12s;
+}
+.summary-row:last-child { border-bottom: none; }
+.summary-row:hover { background: var(--surface-raised); }
+.summary-key  { font-size: 0.78rem; color: var(--text-muted); }
+.summary-val  { font-size: 0.88rem; font-weight: 500; }
+.summary-edit { font-size: 0.7rem; color: var(--text-muted); opacity: 0; transition: opacity 0.12s; }
+.summary-row:hover .summary-edit { opacity: 1; }
+
+
+/* ══════════════════════════════════════════════════════
+   BUILDER
+══════════════════════════════════════════════════════ */
+
+.builder {
+  display: none;
+  flex-direction: column;
+  width: 100%;
+  flex: 1;
+}
+.builder.active { display: flex; }
+
+/* Panel tabs */
+.panel-tabs {
+  display: flex; gap: 4px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto; scrollbar-width: none;
+  flex-shrink: 0;
+  background: var(--surface);
+}
+.panel-tabs::-webkit-scrollbar { display: none; }
+.panel-tab {
+  background: transparent;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  padding: 5px 16px;
+  white-space: nowrap;
+  transition: all 0.14s;
+}
+.panel-tab:hover { border-color: var(--accent-border); color: var(--text); }
+.panel-tab.active { border-color: var(--accent); background: var(--purple-mid); color: var(--accent); font-weight: 600; }
+
+/* Canvas wrapper */
+.canvas-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px 16px 12px;
+  overflow: auto;
+}
+
+/* The WYSIWYG canvas — sized by JS */
+.panel-canvas {
+  position: relative;
+  background: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 4px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08);
+  border-radius: 2px;
+}
+.canvas-empty-hint {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px;
+  color: #bbb; font-size: 0.88rem; text-align: center;
+  pointer-events: none;
+}
+.canvas-empty-hint .big-icon { font-size: 2.5rem; opacity: 0.4; }
+
+/* Blocks */
+.block-wrapper {
+  position: absolute;
+  cursor: move;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.block-wrapper.selected { outline: 2px solid var(--purple); }
+.block-drag-handle {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 18px;
+  background: var(--purple);
+  opacity: 0;
+  border-radius: 1px 1px 0 0;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 5px;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+.block-wrapper:hover .block-drag-handle { opacity: 1; }
+.block-drag-handle:active { cursor: grabbing; }
+.drag-type-label { font-size: 0.55rem; color: rgba(255,255,255,0.65); letter-spacing: 0.06em; font-family: var(--font-ui); }
+.block-delete-btn {
+  background: none; border: none;
+  color: rgba(255,255,255,0.7);
+  cursor: pointer; font-size: 0.7rem; padding: 0 2px; line-height: 1;
+}
+.block-delete-btn:hover { color: #ff7070; }
+
+.block-resize-handle {
+  position: absolute; bottom: 0; right: 0;
+  width: 12px; height: 12px;
+  cursor: se-resize;
+  background: var(--purple);
+  opacity: 0.3;
+  border-radius: 0 0 1px 0;
+  z-index: 10;
+  transition: opacity 0.14s;
+}
+.block-wrapper:hover .block-resize-handle { opacity: 1; }
+
+.block-inner {
+  position: absolute;
+  top: 18px; left: 0; right: 0; bottom: 0;
+  overflow: hidden;
+  padding: 3px 5px;
+  font-family: Georgia, serif;
+  color: #111;
+  font-size: inherit;
+  line-height: 1.35;
+}
+
+/* Block content */
+.block-table { border-collapse: collapse; width: 100%; font-size: inherit; }
+.block-table th {
+  background: #e8e8e8;
+  border: 0.5pt solid #999;
+  padding: 2px 5px;
+  font-weight: 700;
+  text-align: left;
+  font-size: inherit;
+}
+.block-table td {
+  border: 0.5pt solid #bbb;
+  padding: 2px 5px;
+  font-size: inherit;
+  vertical-align: top;
+}
+.block-table tr:nth-child(even) td { background: #f5f5f5; }
+.block-list { padding-left: 1.2em; margin: 0; font-size: inherit; }
+.block-list li { margin-bottom: 1px; }
+.block-text { white-space: pre-wrap; font-size: inherit; }
+.block-img-el { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+
+/* Toolbar */
+.builder-toolbar {
+  display: flex; gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.tool-btn {
+  background: var(--surface-raised);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  padding: 8px 14px;
+  transition: all 0.14s;
+  white-space: nowrap;
+}
+.tool-btn:hover { border-color: var(--accent-border); background: var(--accent-dim); }
+.tool-spacer { flex: 1; }
+.save-btn { color: var(--text-muted); }
+.save-btn:hover { color: var(--text); }
+.print-btn {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #111 !important;
+  font-weight: 700;
+}
+.print-btn:hover { opacity: 0.85; }
+
+/* Overflow warning */
+.overflow-warning {
+  display: none;
+  background: rgba(201,162,39,0.1);
+  border-top: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 0.78rem;
+  padding: 6px 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.overflow-warning.show { display: block; }
+
+/* ══ MODALS ═══════════════════════════════════════════ */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.8);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  max-width: 620px; width: 100%;
+  max-height: 92vh; overflow-y: auto;
+  padding: 22px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.modal-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--accent);
+}
+.modal-hint { font-size: 0.8rem; color: var(--text-muted); margin-top: -8px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 6px; flex-wrap: wrap; }
+
+/* Image capture */
+.img-capture-container {
+  position: relative;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  background: #000;
+  border-radius: 6px;
+  overflow: hidden;
+  line-height: 0;
+  align-self: center;
+}
+#captureImg { display: block; max-width: 100%; pointer-events: none; }
+#selectionRect {
+  position: absolute;
+  border: 2px solid var(--accent);
+  background: rgba(201,162,39,0.15);
+  display: none;
+  pointer-events: none;
+  border-radius: 1px;
+}
+.capture-instructions {
+  font-size: 0.78rem; color: var(--text-muted);
+  text-align: center;
+}
+
+/* Review */
+.review-preview {
+  background: #fff; border-radius: 6px;
+  padding: 12px; max-height: 280px; overflow-y: auto;
+  color: #111; font-family: Georgia, serif; font-size: 0.85rem;
+}
+.review-edit-area {
+  display: none; flex-direction: column; gap: 10px;
+}
+.review-edit-area.open { display: flex; }
+.review-edit-label { font-size: 0.75rem; color: var(--text-muted); }
+.review-json-ta {
+  background: var(--surface-raised);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: monospace; font-size: 0.75rem;
+  padding: 10px; width: 100%; min-height: 120px; resize: vertical;
+  outline: none;
+}
+.review-json-ta:focus { border-color: var(--accent); }
+
+/* AI prompt */
+.ai-prompt-ta {
+  background: var(--surface-raised);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-ui); font-size: 0.9rem;
+  padding: 12px; width: 100%; min-height: 90px; resize: vertical;
+  outline: none;
+}
+.ai-prompt-ta:focus { border-color: var(--accent); }
+
+/* Spinner */
+.spinner {
+  display: none; align-items: center; gap: 8px;
+  color: var(--text-muted); font-size: 0.82rem;
+}
+.spinner.show { display: flex; }
+.spin-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+  animation: sdBounce 1.2s infinite ease-in-out;
+}
+.spin-dot:nth-child(2) { animation-delay: 0.2s; }
+.spin-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes sdBounce {
+  0%,80%,100% { transform: scale(0.5); opacity: 0.35; }
+  40%          { transform: scale(1);   opacity: 1; }
+}
+.error-msg { color: #ff7070; font-size: 0.82rem; display: none; }
+.error-msg.show { display: block; }
+
+/* ══ PRINT ════════════════════════════════════════════ */
+#print-area { display: none; }
+
+@media print {
+  body > *:not(#print-area) { display: none !important; }
+  #print-area {
+    display: block !important;
+    position: fixed; inset: 0;
+  }
+  @page { margin: 0; size: var(--print-w) var(--print-h); }
+  .print-page {
+    width: var(--print-w);
+    height: var(--print-h);
+    position: relative;
+    overflow: hidden;
+    background: white;
+    page-break-after: always;
+  }
+  .print-page:last-child { page-break-after: avoid; }
+  .print-block {
+    position: absolute;
+    overflow: hidden;
+    box-sizing: border-box;
+    color: #111;
+    font-family: Georgia, serif;
+  }
+}
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <span style="font-size:1.3rem">🛡️</span>
+  <span class="app-title">GM Screen Creator</span>
+  <span class="project-name-badge" id="headerBadge"></span>
+</header>
+
+<!-- ═══════════════════════════════════════════════════
+  WIZARD
+══════════════════════════════════════════════════════ -->
+<div class="wizard" id="wizard">
+
+  <div class="progress-track" id="progressTrack">
+    <span class="progress-label" id="progressLabel"></span>
+  </div>
+
+  <!-- Step 1: Name -->
+  <div class="step active" id="step-1">
+    <div>
+      <div class="step-eyebrow">New project · Step 1 of 5</div>
+      <div class="step-question">What are you calling this screen?</div>
+    </div>
+    <input class="text-input" id="screenNameInput" type="text"
+      placeholder="e.g. Curse of Strahd, Wilderness Campaign…" maxlength="60" autocomplete="off" />
+    <div class="nav-row">
+      <button class="btn btn-primary" id="btn-next-1" onclick="goNext(1)" disabled>Continue →</button>
+    </div>
+  </div>
+
+  <!-- Step 2: Orientation -->
+  <div class="step" id="step-2">
+    <div>
+      <div class="step-eyebrow">Step 2 of 5</div>
+      <div class="step-question">Panel orientation?</div>
+    </div>
+    <p class="step-hint">This sets how your panels print and how the editor fits your screen.</p>
+    <div class="options-grid cols-2">
+      <div class="option-card" id="opt-landscape" onclick="pickOrientation('landscape')">
+        <div class="panel-vis" id="vis-landscape"></div>
+        <div class="option-label">Landscape</div>
+        <div class="option-sub">Horizontal panels — wider tables, classic screen look</div>
+      </div>
+      <div class="option-card" id="opt-portrait" onclick="pickOrientation('portrait')">
+        <div class="panel-vis" id="vis-portrait"></div>
+        <div class="option-label">Portrait</div>
+        <div class="option-sub">Vertical panels — taller columns, more content rows</div>
+      </div>
+    </div>
+    <div class="nav-row">
+      <button class="btn btn-ghost" onclick="goBack(2)">← Back</button>
+      <button class="btn btn-primary" id="btn-next-2" onclick="goNext(2)" disabled>Continue →</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Panel Count -->
+  <div class="step" id="step-3">
+    <div>
+      <div class="step-eyebrow">Step 3 of 5</div>
+      <div class="step-question">How many panels?</div>
+    </div>
+    <p class="step-hint">Most GM screens use 3 or 4. Each panel prints as one page.</p>
+    <div class="count-grid">
+      <div class="option-card" id="opt-count-2" onclick="pickCount(2)">
+        <div class="panel-vis" id="pvis-2"></div>
+        <div class="option-label">2</div>
+      </div>
+      <div class="option-card" id="opt-count-3" onclick="pickCount(3)">
+        <div class="panel-vis" id="pvis-3"></div>
+        <div class="option-label">3</div>
+      </div>
+      <div class="option-card" id="opt-count-4" onclick="pickCount(4)">
+        <div class="panel-vis" id="pvis-4"></div>
+        <div class="option-label">4</div>
+      </div>
+      <div class="option-card" id="opt-count-5" onclick="pickCount(5)">
+        <div class="panel-vis" id="pvis-5"></div>
+        <div class="option-label">5</div>
+      </div>
+      <div class="option-card custom-count-card" id="opt-count-custom" onclick="pickCount('custom')">
+        <div class="option-label" style="white-space:nowrap">Custom</div>
+        <input class="text-input" id="customCountInput" type="number" min="1" max="12" placeholder="6"
+          onclick="event.stopPropagation(); pickCount('custom')"
+          oninput="onCustomCountChange()" />
+        <span style="font-size:0.78rem;color:var(--text-muted)">panels</span>
+      </div>
+    </div>
+    <div class="nav-row">
+      <button class="btn btn-ghost" onclick="goBack(3)">← Back</button>
+      <button class="btn btn-primary" id="btn-next-3" onclick="goNext(3)" disabled>Continue →</button>
+    </div>
+  </div>
+
+  <!-- Step 4: Paper Size -->
+  <div class="step" id="step-4">
+    <div>
+      <div class="step-eyebrow">Step 4 of 5</div>
+      <div class="step-question">Paper size?</div>
+    </div>
+    <div class="options-grid cols-3">
+      <div class="option-card" id="opt-paper-letter" onclick="pickPaper('letter')">
+        <div style="font-size:1.8rem">📄</div>
+        <div class="option-label">US Letter</div>
+        <div class="option-sub">8.5 × 11 in</div>
+      </div>
+      <div class="option-card" id="opt-paper-a4" onclick="pickPaper('a4')">
+        <div style="font-size:1.8rem">📄</div>
+        <div class="option-label">A4</div>
+        <div class="option-sub">210 × 297 mm</div>
+      </div>
+      <div class="option-card" id="opt-paper-custom" onclick="pickPaper('custom')">
+        <div style="font-size:1.8rem">✏️</div>
+        <div class="option-label">Custom</div>
+        <div class="option-sub">Enter dimensions</div>
+      </div>
+    </div>
+
+    <div id="customSizeArea" style="display:none;flex-direction:column;gap:12px;">
+      <div class="unit-toggle">
+        <button class="unit-btn active" id="ubtn-in"  onclick="setUnit('in')">in</button>
+        <button class="unit-btn"        id="ubtn-mm"  onclick="setUnit('mm')">mm</button>
+        <button class="unit-btn"        id="ubtn-cm"  onclick="setUnit('cm')">cm</button>
+      </div>
+      <div class="dim-row">
+        <input class="text-input" id="dimW" type="number" placeholder="Width"  step="0.1" min="1" oninput="validateDims()" />
+        <span class="dim-sep">×</span>
+        <input class="text-input" id="dimH" type="number" placeholder="Height" step="0.1" min="1" oninput="validateDims()" />
+        <span class="dim-unit-label" id="dimUnitLabel">inches</span>
+      </div>
+    </div>
+
+    <div class="nav-row">
+      <button class="btn btn-ghost" onclick="goBack(4)">← Back</button>
+      <button class="btn btn-primary" id="btn-next-4" onclick="goNext(4)" disabled>Continue →</button>
+    </div>
+  </div>
+
+  <!-- Step 5: Summary -->
+  <div class="step" id="step-5">
+    <div>
+      <div class="step-eyebrow">Step 5 of 5 · Confirm</div>
+      <div class="step-question">Ready to build.</div>
+    </div>
+    <p class="step-hint" style="margin-top:-10px;">Tap any row to go back and change it.</p>
+    <div class="summary-card">
+      <div class="summary-row" onclick="goToStep(1)">
+        <span class="summary-key">Screen name</span>
+        <span class="summary-val" id="sum-name">—</span>
+        <span class="summary-edit">edit</span>
+      </div>
+      <div class="summary-row" onclick="goToStep(2)">
+        <span class="summary-key">Orientation</span>
+        <span class="summary-val" id="sum-orient">—</span>
+        <span class="summary-edit">edit</span>
+      </div>
+      <div class="summary-row" onclick="goToStep(3)">
+        <span class="summary-key">Panels</span>
+        <span class="summary-val" id="sum-count">—</span>
+        <span class="summary-edit">edit</span>
+      </div>
+      <div class="summary-row" onclick="goToStep(4)">
+        <span class="summary-key">Paper size</span>
+        <span class="summary-val" id="sum-paper">—</span>
+        <span class="summary-edit">edit</span>
+      </div>
+    </div>
+    <div class="nav-row">
+      <button class="btn btn-ghost" onclick="goBack(5)">← Back</button>
+      <button class="btn btn-primary" onclick="launchBuilder()">Start Building →</button>
+    </div>
+  </div>
+
+</div><!-- /wizard -->
+
+
+<!-- ═══════════════════════════════════════════════════
+  BUILDER
+══════════════════════════════════════════════════════ -->
+<div class="builder" id="builder">
+
+  <!-- Panel tabs -->
+  <div class="panel-tabs" id="panelTabs"></div>
+
+  <!-- Canvas -->
+  <div class="canvas-wrapper" id="canvasWrapper">
+    <div class="panel-canvas" id="panelCanvas">
+      <div class="canvas-empty-hint" id="canvasHint">
+        <div class="big-icon">📋</div>
+        <div>Add a block below to get started</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overflow warning -->
+  <div class="overflow-warning" id="overflowWarning">⚠ Content extends beyond the panel area</div>
+
+  <!-- Toolbar -->
+  <div class="builder-toolbar">
+    <button class="tool-btn" onclick="openUploadModal()">📷 Upload Image</button>
+    <button class="tool-btn" onclick="openCameraModal()">📸 Take Photo</button>
+    <button class="tool-btn" onclick="openAIModal()">✨ AI Prompt</button>
+    <div class="tool-spacer"></div>
+    <button class="tool-btn save-btn" onclick="saveProject()">💾 Save</button>
+    <button class="tool-btn print-btn" onclick="printScreen()">🖨 Print</button>
+  </div>
+</div><!-- /builder -->
+
+
+<!-- ═══════════════════════════════════════════════════
+  MODALS
+══════════════════════════════════════════════════════ -->
+
+<!-- Image capture + region selection -->
+<div class="modal-overlay" id="imgModal">
+  <div class="modal-box">
+    <div class="modal-title">Select a region to extract</div>
+    <p class="modal-hint">Drag to draw a box around the content you want to capture.</p>
+    <div class="img-capture-container" id="imgCaptureContainer">
+      <img id="captureImg" alt="Captured source" />
+      <div id="selectionRect"></div>
+    </div>
+    <p class="capture-instructions" id="captureInstructions">Draw a selection to continue</p>
+    <div class="spinner" id="ocrSpinner">
+      <div class="spin-dot"></div><div class="spin-dot"></div><div class="spin-dot"></div>
+      Sending to Claude Vision…
+    </div>
+    <div class="error-msg" id="ocrError"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('imgModal')">Cancel</button>
+      <button class="btn btn-primary" id="extractBtn" disabled onclick="extractRegion()">Extract →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Block review -->
+<div class="modal-overlay" id="reviewModal">
+  <div class="modal-box">
+    <div class="modal-title">Review extracted block</div>
+    <p class="modal-hint">This is what Claude extracted. Edit if needed, then place it.</p>
+    <div class="review-preview" id="reviewPreview"></div>
+    <div class="review-edit-area" id="reviewEditArea">
+      <p class="review-edit-label">Edit JSON directly:</p>
+      <textarea class="review-json-ta" id="reviewJsonTA" spellcheck="false"></textarea>
+      <div class="error-msg" id="reviewJsonError"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('reviewModal')">Cancel</button>
+      <button class="btn btn-ghost" id="reviewEditBtn" onclick="toggleReviewEdit()">Edit JSON</button>
+      <button class="btn btn-primary" onclick="placeBlock()">Place Block →</button>
+    </div>
+  </div>
+</div>
+
+<!-- AI prompt -->
+<div class="modal-overlay" id="aiModal">
+  <div class="modal-box">
+    <div class="modal-title">Generate a block with AI</div>
+    <p class="modal-hint">Describe the table, list, or reference text you need. Be specific.</p>
+    <textarea class="ai-prompt-ta" id="aiPromptTA" placeholder='Examples:
+"AC difficulty table: Easy 10, Medium 15, Hard 20, Very Hard 25, Nearly Impossible 30"
+"Conditions list: Blinded, Charmed, Deafened, Frightened, Incapacitated, Poisoned — each with a 1-line effect"
+"Common DCs for skill checks in a dark fantasy setting"'></textarea>
+    <div class="spinner" id="aiSpinner">
+      <div class="spin-dot"></div><div class="spin-dot"></div><div class="spin-dot"></div>
+      Generating…
+    </div>
+    <div class="error-msg" id="aiError"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('aiModal')">Cancel</button>
+      <button class="btn btn-primary" id="aiGenerateBtn" onclick="generateAIBlock()">Generate →</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════
+  PRINT AREA (hidden; populated before window.print())
+══════════════════════════════════════════════════════ -->
+<div id="print-area"></div>
+
+
+<!-- ═══════════════════════════════════════════════════
+  SCRIPT
+══════════════════════════════════════════════════════ -->
+<script>
+// ─────────────────────────────────────────────────────
+//  WIZARD STATE & LOGIC
+// ─────────────────────────────────────────────────────
+const S = {
+  step: 1,
+  name: '',
+  orientation: null,
+  count: null,
+  paper: null,
+  customW: null, customH: null, unit: 'in'
+};
+const TOTAL = 5;
+
+function renderProgress() {
+  const track = document.getElementById('progressTrack');
+  track.querySelectorAll('.progress-dot').forEach(d => d.remove());
+  const label = document.getElementById('progressLabel');
+  for (let i = 1; i <= TOTAL; i++) {
+    const d = document.createElement('div');
+    d.className = 'progress-dot' + (i === S.step ? ' active' : i < S.step ? ' done' : '');
+    track.insertBefore(d, label);
+  }
+  label.textContent = `${S.step} of ${TOTAL}`;
+}
+
+function goToStep(n) {
+  document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+  document.getElementById('step-' + n).classList.add('active');
+  S.step = n;
+  renderProgress();
+  if (n === 3) buildCountVisuals();
+  if (n === 5) renderSummary();
+}
+function goNext(from) { goToStep(from + 1); }
+function goBack(from) { goToStep(from - 1); }
+
+// Step 1
+const nameInput = document.getElementById('screenNameInput');
+const btn1 = document.getElementById('btn-next-1');
+nameInput.addEventListener('input', () => { S.name = nameInput.value.trim(); btn1.disabled = !S.name; });
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter' && S.name) goNext(1); });
+
+// Step 2
+function buildOrientationVis() {
+  [['vis-landscape','36px','26px'],['vis-portrait','20px','36px']].forEach(([id, w, h]) => {
+    const el = document.getElementById(id); el.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      const b = document.createElement('div');
+      b.className = 'pv-block'; b.style.cssText = `width:${w};height:${h};`;
+      el.appendChild(b);
+    }
+  });
+}
+buildOrientationVis();
+
+function pickOrientation(val) {
+  S.orientation = val;
+  document.getElementById('opt-landscape').classList.toggle('selected', val === 'landscape');
+  document.getElementById('opt-portrait').classList.toggle('selected', val === 'portrait');
+  document.getElementById('btn-next-2').disabled = false;
+}
+
+// Step 3
+function buildCountVisuals() {
+  const isLand = S.orientation === 'landscape';
+  [2,3,4,5].forEach(n => {
+    const vis = document.getElementById('pvis-' + n); if (!vis) return; vis.innerHTML = '';
+    for (let i = 0; i < n; i++) {
+      const b = document.createElement('div'); b.className = 'pv-block';
+      if (isLand) { const w = Math.max(8, Math.floor(60/n)-3); b.style.cssText = `width:${w}px;height:22px;`; }
+      else        { const h = Math.min(36, Math.max(14, Math.floor(40/Math.max(n-1,1)))); b.style.cssText = `width:14px;height:${h}px;`; }
+      vis.appendChild(b);
+    }
+  });
+}
+
+function pickCount(val) {
+  [2,3,4,5,'custom'].forEach(v => { const el = document.getElementById('opt-count-'+v); if (el) el.classList.remove('selected'); });
+  const btn = document.getElementById('btn-next-3');
+  if (val === 'custom') {
+    document.getElementById('opt-count-custom').classList.add('selected');
+    const n = parseInt(document.getElementById('customCountInput').value);
+    if (n >= 1 && n <= 12) { S.count = n; btn.disabled = false; } else { S.count = null; btn.disabled = true; }
+  } else {
+    S.count = val; document.getElementById('opt-count-'+val).classList.add('selected'); btn.disabled = false;
+  }
+}
+function onCustomCountChange() { pickCount('custom'); }
+
+// Step 4
+function pickPaper(val) {
+  S.paper = val;
+  ['letter','a4','custom'].forEach(v => document.getElementById('opt-paper-'+v).classList.toggle('selected', v===val));
+  const area = document.getElementById('customSizeArea');
+  const btn  = document.getElementById('btn-next-4');
+  if (val === 'custom') { area.style.display = 'flex'; validateDims(); }
+  else                  { area.style.display = 'none'; btn.disabled = false; }
+}
+function setUnit(u) {
+  S.unit = u;
+  ['in','mm','cm'].forEach(v => document.getElementById('ubtn-'+v).classList.toggle('active', v===u));
+  document.getElementById('dimUnitLabel').textContent = {in:'inches',mm:'millimeters',cm:'centimeters'}[u];
+  document.getElementById('dimW').value = '';
+  document.getElementById('dimH').value = '';
+  S.customW = null; S.customH = null;
+  document.getElementById('btn-next-4').disabled = true;
+}
+function validateDims() {
+  const w = parseFloat(document.getElementById('dimW').value);
+  const h = parseFloat(document.getElementById('dimH').value);
+  const ok = w > 0 && h > 0;
+  S.customW = ok ? w : null; S.customH = ok ? h : null;
+  document.getElementById('btn-next-4').disabled = !ok;
+}
+
+// Step 5
+function renderSummary() {
+  document.getElementById('sum-name').textContent   = S.name;
+  document.getElementById('sum-orient').textContent = S.orientation === 'landscape' ? 'Landscape (horizontal)' : 'Portrait (vertical)';
+  document.getElementById('sum-count').textContent  = S.count + ' panels';
+  let ps = '';
+  if (S.paper === 'letter') ps = 'US Letter — 8.5 × 11 in';
+  else if (S.paper === 'a4') ps = 'A4 — 210 × 297 mm';
+  else ps = `Custom — ${S.customW} × ${S.customH} ${S.unit}`;
+  document.getElementById('sum-paper').textContent = ps;
+  document.getElementById('headerBadge').textContent = S.name;
+  document.getElementById('headerBadge').style.display = 'block';
+}
+
+renderProgress();
+
+
+// ─────────────────────────────────────────────────────
+//  BUILDER
+// ─────────────────────────────────────────────────────
+
+// Paper dimensions → inches
+function getPaperDims() {
+  let w, h;
+  if (S.paper === 'letter')  { w = 8.5; h = 11; }
+  else if (S.paper === 'a4') { w = 8.27; h = 11.69; }
+  else {
+    const factor = { in: 1, mm: 1/25.4, cm: 1/2.54 }[S.unit] || 1;
+    w = S.customW * factor; h = S.customH * factor;
+  }
+  if (S.orientation === 'landscape') return { w: Math.max(w,h), h: Math.min(w,h) };
+  return { w: Math.min(w,h), h: Math.max(w,h) };
+}
+
+// Builder state
+let B = {
+  currentPanel: 0,
+  panels: [],
+  pendingBlock: null,
+  capturedImageData: null,
+  selectionCoords: null,
+};
+let canvasW = 0, canvasH = 0;
+let paperW_in = 0, paperH_in = 0;
+let blockIdCounter = 1;
+
+function newBlockId() { return 'b' + (blockIdCounter++); }
+
+// ── Launch ──────────────────────────────────────────
+function launchBuilder() {
+  const dims = getPaperDims();
+  paperW_in = dims.w; paperH_in = dims.h;
+
+  // Init panels
+  B.panels = Array.from({ length: S.count }, (_, i) => ({ id: i, blocks: [] }));
+
+  // Calc canvas display size
+  calcCanvasSize();
+  const canvas = document.getElementById('panelCanvas');
+  canvas.style.width  = canvasW + 'px';
+  canvas.style.height = canvasH + 'px';
+
+  // Render tabs
+  renderPanelTabs();
+
+  // Switch UI
+  document.body.classList.add('builder-mode');
+  document.getElementById('wizard').style.display = 'none';
+  document.getElementById('builder').classList.add('active');
+  document.getElementById('headerBadge').textContent = S.name;
+  document.getElementById('headerBadge').style.display = 'block';
+
+  renderPanel(0);
+}
+
+function calcCanvasSize() {
+  const DPI = 96;
+  const rawW = paperW_in * DPI;
+  const rawH = paperH_in * DPI;
+  const maxW = Math.min(window.innerWidth  - 36, 920);
+  const maxH = Math.min(window.innerHeight * 0.58, 640);
+  const scale = Math.min(maxW / rawW, maxH / rawH);
+  canvasW = Math.round(rawW * scale);
+  canvasH = Math.round(rawH * scale);
+}
+
+// ── Panel tabs ──────────────────────────────────────
+function renderPanelTabs() {
+  const tabs = document.getElementById('panelTabs');
+  tabs.innerHTML = '';
+  B.panels.forEach((p, i) => {
+    const t = document.createElement('button');
+    t.className = 'panel-tab' + (i === B.currentPanel ? ' active' : '');
+    t.textContent = 'Panel ' + (i + 1);
+    t.onclick = () => switchPanel(i);
+    tabs.appendChild(t);
+  });
+}
+
+function switchPanel(idx) {
+  B.currentPanel = idx;
+  renderPanelTabs();
+  renderPanel(idx);
+}
+
+// ── Panel rendering ─────────────────────────────────
+function renderPanel(idx) {
+  const canvas = document.getElementById('panelCanvas');
+  // Keep the empty hint div, remove block wrappers
+  canvas.querySelectorAll('.block-wrapper').forEach(el => el.remove());
+  const panel = B.panels[idx];
+  const hint = document.getElementById('canvasHint');
+  hint.style.display = panel.blocks.length === 0 ? 'flex' : 'none';
+  panel.blocks.forEach(block => canvas.appendChild(createBlockEl(block)));
+  checkOverflow();
+}
+
+// ── Block element ───────────────────────────────────
+function createBlockEl(block) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'block-wrapper';
+  wrapper.id = 'block-' + block.id;
+  wrapper.style.left   = block.x + '%';
+  wrapper.style.top    = block.y + '%';
+  wrapper.style.width  = block.w + '%';
+  wrapper.style.height = block.h + '%';
+  wrapper.style.fontSize = (block.fontSize || 9) + 'pt';
+
+  // Drag handle
+  const handle = document.createElement('div');
+  handle.className = 'block-drag-handle';
+  handle.innerHTML = `
+    <span class="drag-type-label">${block.type.toUpperCase()}</span>
+    <button class="block-delete-btn" onclick="deleteBlock('${block.id}')">✕</button>`;
+
+  // Inner content
+  const inner = document.createElement('div');
+  inner.className = 'block-inner';
+  inner.innerHTML = renderBlockHTML(block);
+
+  // Resize handle
+  const resizeH = document.createElement('div');
+  resizeH.className = 'block-resize-handle';
+
+  wrapper.appendChild(handle);
+  wrapper.appendChild(inner);
+  wrapper.appendChild(resizeH);
+
+  setupBlockDrag(wrapper, block);
+  setupBlockResize(resizeH, wrapper, block);
+
+  return wrapper;
+}
+
+function renderBlockHTML(block) {
+  switch (block.type) {
+    case 'table': {
+      const { headers = [], rows = [] } = block.content;
+      let h = '<table class="block-table"><thead><tr>';
+      headers.forEach(c => { h += `<th>${esc(c)}</th>`; });
+      h += '</tr></thead><tbody>';
+      rows.forEach(row => {
+        h += '<tr>';
+        row.forEach(cell => { h += `<td>${esc(cell)}</td>`; });
+        h += '</tr>';
+      });
+      h += '</tbody></table>';
+      return h;
+    }
+    case 'list': {
+      const { ordered = false, items = [] } = block.content;
+      const tag = ordered ? 'ol' : 'ul';
+      let h = `<${tag} class="block-list">`;
+      items.forEach(item => { h += `<li>${esc(item)}</li>`; });
+      h += `</${tag}>`;
+      return h;
+    }
+    case 'text': return `<div class="block-text">${esc(block.content.text || '')}</div>`;
+    case 'image': return `<img class="block-img-el" src="${block.content.src || ''}" alt="block image" />`;
+    default: return '';
+  }
+}
+
+function esc(s) {
+  if (typeof s !== 'string') s = String(s ?? '');
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Drag ────────────────────────────────────────────
+function setupBlockDrag(wrapper, block) {
+  let startX, startY, origX, origY, dragging = false;
+
+  const onStart = (cx, cy) => {
+    startX = cx; startY = cy; origX = block.x; origY = block.y; dragging = true;
+  };
+  const onMove = (cx, cy) => {
+    if (!dragging) return;
+    const dx = (cx - startX) / canvasW * 100;
+    const dy = (cy - startY) / canvasH * 100;
+    block.x = Math.max(0, Math.min(100 - block.w, origX + dx));
+    block.y = Math.max(0, Math.min(100 - block.h, origY + dy));
+    wrapper.style.left = block.x + '%';
+    wrapper.style.top  = block.y + '%';
+    checkOverflow();
+  };
+  const onEnd = () => { dragging = false; };
+
+  wrapper.addEventListener('mousedown', e => {
+    if (e.target.classList.contains('block-delete-btn') || e.target.classList.contains('block-resize-handle')) return;
+    e.preventDefault();
+    onStart(e.clientX, e.clientY);
+    const mm = e2 => onMove(e2.clientX, e2.clientY);
+    const mu = () => { onEnd(); document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); };
+    document.addEventListener('mousemove', mm);
+    document.addEventListener('mouseup', mu);
+  });
+
+  wrapper.addEventListener('touchstart', e => {
+    if (e.target.classList.contains('block-delete-btn') || e.target.classList.contains('block-resize-handle')) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    onStart(t.clientX, t.clientY);
+    const tm = e2 => { const t2 = e2.touches[0]; onMove(t2.clientX, t2.clientY); };
+    const te = () => { onEnd(); wrapper.removeEventListener('touchmove', tm); wrapper.removeEventListener('touchend', te); };
+    wrapper.addEventListener('touchmove', tm, { passive: false });
+    wrapper.addEventListener('touchend', te);
+  }, { passive: false });
+}
+
+// ── Resize ──────────────────────────────────────────
+function setupBlockResize(handle, wrapper, block) {
+  const onStart = (startX, startY) => {
+    const origW = block.w, origH = block.h;
+    const onMove = (mx, my) => {
+      const dx = (mx - startX) / canvasW * 100;
+      const dy = (my - startY) / canvasH * 100;
+      block.w = Math.max(8, Math.min(100 - block.x, origW + dx));
+      block.h = Math.max(6, Math.min(100 - block.y, origH + dy));
+      wrapper.style.width  = block.w + '%';
+      wrapper.style.height = block.h + '%';
+      checkOverflow();
+    };
+    const onEnd = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onEnd); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onEnd);
+  };
+
+  handle.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); onStart(e.clientX, e.clientY); });
+
+  handle.addEventListener('touchstart', e => {
+    e.preventDefault(); e.stopPropagation();
+    const t = e.touches[0];
+    const startX = t.clientX, startY = t.clientY;
+    const origW = block.w, origH = block.h;
+    const tm = e2 => {
+      const t2 = e2.touches[0];
+      const dx = (t2.clientX - startX) / canvasW * 100;
+      const dy = (t2.clientY - startY) / canvasH * 100;
+      block.w = Math.max(8, Math.min(100 - block.x, origW + dx));
+      block.h = Math.max(6, Math.min(100 - block.y, origH + dy));
+      wrapper.style.width  = block.w + '%';
+      wrapper.style.height = block.h + '%';
+      checkOverflow();
+    };
+    const te = () => { handle.removeEventListener('touchmove', tm); handle.removeEventListener('touchend', te); };
+    handle.addEventListener('touchmove', tm, { passive: false });
+    handle.addEventListener('touchend', te);
+  }, { passive: false });
+}
+
+// ── Block management ────────────────────────────────
+function deleteBlock(id) {
+  const panel = B.panels[B.currentPanel];
+  panel.blocks = panel.blocks.filter(b => b.id !== id);
+  renderPanel(B.currentPanel);
+}
+
+function getDropPos(w, h) {
+  const panel = B.panels[B.currentPanel];
+  let maxY = 2;
+  panel.blocks.forEach(b => { maxY = Math.max(maxY, b.y + b.h + 1); });
+  return { x: 5, y: maxY };
+}
+
+function addBlock(def) {
+  const w = def.w || 90;
+  const h = def.h || estimateBlockHeight(def);
+  const pos = getDropPos(w, h);
+  const block = {
+    id: newBlockId(),
+    type: def.type,
+    content: def.content,
+    x: pos.x, y: pos.y,
+    w, h,
+    fontSize: def.fontSize || 9,
+  };
+  B.panels[B.currentPanel].blocks.push(block);
+  renderPanel(B.currentPanel);
+}
+
+function estimateBlockHeight(def) {
+  switch (def.type) {
+    case 'table': return Math.min(80, 8 + ((def.content.rows || []).length + 1) * 8);
+    case 'list':  return Math.min(70, 6 + (def.content.items || []).length * 7);
+    case 'text':  return 20;
+    case 'image': return 40;
+    default: return 20;
+  }
+}
+
+function checkOverflow() {
+  const panel = B.panels[B.currentPanel];
+  const over = panel.blocks.some(b => b.x + b.w > 100.5 || b.y + b.h > 100.5);
+  document.getElementById('overflowWarning').classList.toggle('show', over);
+}
+
+// ── Upload / Camera ─────────────────────────────────
+function openUploadModal() { triggerFilePick(false); }
+function openCameraModal()  { triggerFilePick(true);  }
+
+function triggerFilePick(camera) {
+  // Must be in the DOM before .click() works inside a sandboxed iframe
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  if (camera) input.capture = 'environment';
+  input.style.cssText = 'position:fixed;top:-200px;left:-200px;opacity:0;pointer-events:none;';
+  document.body.appendChild(input);
+  input.addEventListener('change', e => {
+    const file = e.target.files && e.target.files[0];
+    document.body.removeChild(input);
+    if (file) loadImageFile(file);
+  });
+  input.click();
+}
+
+function loadImageFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => { B.capturedImageData = ev.target.result; openImageModal(ev.target.result); };
+  reader.onerror = () => alert('Could not read image file.');
+  reader.readAsDataURL(file);
+}
+
+// ── Image modal ─────────────────────────────────────
+function openImageModal(src) {
+  const img = document.getElementById('captureImg');
+  const container = document.getElementById('imgCaptureContainer');
+  resetSelection();
+  img.onload = () => {
+    // Size container to match image aspect ratio, scaled to fit
+    const maxW = Math.min(window.innerWidth - 80, 560);
+    const maxH = Math.min(window.innerHeight * 0.45, 380);
+    const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
+    const dw = Math.round(img.naturalWidth  * scale);
+    const dh = Math.round(img.naturalHeight * scale);
+    container.style.width  = dw + 'px';
+    container.style.height = dh + 'px';
+    img.style.width  = dw + 'px';
+    img.style.height = dh + 'px';
+  };
+  img.src = src;
+  openModal('imgModal');
+}
+
+function resetSelection() {
+  B.selectionCoords = null;
+  document.getElementById('selectionRect').style.display = 'none';
+  document.getElementById('extractBtn').disabled = true;
+  document.getElementById('captureInstructions').textContent = 'Draw a selection to continue';
+  document.getElementById('ocrError').classList.remove('show');
+}
+
+// Region selection
+const imgCaptureContainer = document.getElementById('imgCaptureContainer');
+let selStart = null;
+
+imgCaptureContainer.addEventListener('mousedown', e => {
+  const r = imgCaptureContainer.getBoundingClientRect();
+  selStart = { x: e.clientX - r.left, y: e.clientY - r.top };
+  updateSelRect(selStart, selStart);
+  const mm = e2 => {
+    const r2 = imgCaptureContainer.getBoundingClientRect();
+    const cur = { x: clamp(e2.clientX - r2.left, 0, r2.width), y: clamp(e2.clientY - r2.top, 0, r2.height) };
+    updateSelRect(selStart, cur);
+    finishSelection(selStart, cur);
+  };
+  const mu = () => { document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); };
+  document.addEventListener('mousemove', mm);
+  document.addEventListener('mouseup', mu);
+});
+
+imgCaptureContainer.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const r = imgCaptureContainer.getBoundingClientRect();
+  const t = e.touches[0];
+  selStart = { x: t.clientX - r.left, y: t.clientY - r.top };
+  const tm = e2 => {
+    const r2 = imgCaptureContainer.getBoundingClientRect();
+    const t2 = e2.touches[0];
+    const cur = { x: clamp(t2.clientX - r2.left, 0, r2.width), y: clamp(t2.clientY - r2.top, 0, r2.height) };
+    updateSelRect(selStart, cur);
+    finishSelection(selStart, cur);
+  };
+  const te = () => { imgCaptureContainer.removeEventListener('touchmove', tm); imgCaptureContainer.removeEventListener('touchend', te); };
+  imgCaptureContainer.addEventListener('touchmove', tm, { passive: false });
+  imgCaptureContainer.addEventListener('touchend', te);
+}, { passive: false });
+
+function updateSelRect(a, b) {
+  const rect = document.getElementById('selectionRect');
+  const x1 = Math.min(a.x, b.x), y1 = Math.min(a.y, b.y);
+  const x2 = Math.max(a.x, b.x), y2 = Math.max(a.y, b.y);
+  if (x2 - x1 < 4 || y2 - y1 < 4) { rect.style.display = 'none'; return; }
+  rect.style.cssText = `display:block;left:${x1}px;top:${y1}px;width:${x2-x1}px;height:${y2-y1}px;`;
+}
+
+function finishSelection(a, b) {
+  const container = imgCaptureContainer;
+  const w = container.clientWidth, h = container.clientHeight;
+  if (w < 1 || h < 1) return;
+  const x1 = clamp(Math.min(a.x, b.x) / w, 0, 1);
+  const y1 = clamp(Math.min(a.y, b.y) / h, 0, 1);
+  const x2 = clamp(Math.max(a.x, b.x) / w, 0, 1);
+  const y2 = clamp(Math.max(a.y, b.y) / h, 0, 1);
+  if (x2 - x1 < 0.02 || y2 - y1 < 0.02) {
+    B.selectionCoords = null;
+    document.getElementById('extractBtn').disabled = true;
+    return;
+  }
+  B.selectionCoords = { x1, y1, x2, y2 };
+  document.getElementById('extractBtn').disabled = false;
+  document.getElementById('captureInstructions').textContent = 'Selection ready — click Extract';
+}
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+// Crop image to selection using Canvas API
+function cropToSelection(src, coords) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const { x1, y1, x2, y2 } = coords;
+      const sx = x1 * img.naturalWidth,  sy = y1 * img.naturalHeight;
+      const sw = (x2-x1) * img.naturalWidth, sh = (y2-y1) * img.naturalHeight;
+      const cvs = document.createElement('canvas');
+      cvs.width = sw; cvs.height = sh;
+      cvs.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      resolve(cvs.toDataURL('image/jpeg', 0.92));
+    };
+    img.src = src;
+  });
+}
+
+// ── OCR extraction ──────────────────────────────────
+async function extractRegion() {
+  if (!B.selectionCoords || !B.capturedImageData) return;
+  const btn = document.getElementById('extractBtn');
+  const spinner = document.getElementById('ocrSpinner');
+  const errEl = document.getElementById('ocrError');
+  btn.disabled = true; spinner.classList.add('show'); errEl.classList.remove('show');
+
+  try {
+    const cropped = await cropToSelection(B.capturedImageData, B.selectionCoords);
+    const b64 = cropped.split(',')[1];
+
+    const resp = await fetch('/api/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        system: `You are an OCR and content extraction tool for a tabletop RPG GM screen builder. Analyze the image region and extract content into structured JSON.
+
+Return ONLY a valid JSON object, no markdown fences, no preamble:
+{"type":"table"|"list"|"text","content":{...}}
+
+table content: {"headers":["Col1",...],"rows":[["cell",...],...]}
+list content:  {"ordered":true|false,"items":["item1",...]}
+text content:  {"text":"the extracted text"}
+
+Choose the type that best matches the visual structure. Tables for columnar data, lists for enumerated items, text for paragraphs and rules.`,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
+            { type: 'text', text: 'Extract the content from this image region into the JSON format described.' }
+          ]
+        }]
+      })
+    });
+
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error.message);
+    const text = (data.content || []).map(c => c.text || '').join('');
+    const blockDef = safeParseJSON(text);
+    if (!blockDef.type || !blockDef.content) throw new Error('Unexpected response format');
+
+    B.pendingBlock = blockDef;
+    closeModal('imgModal');
+    showReviewModal(blockDef);
+
+  } catch (err) {
+    errEl.textContent = 'Error: ' + (err.message || 'Extraction failed. Try again.');
+    errEl.classList.add('show');
+    btn.disabled = false;
+  } finally {
+    spinner.classList.remove('show');
+  }
+}
+
+// ── AI Prompt ───────────────────────────────────────
+function openAIModal() {
+  document.getElementById('aiPromptTA').value = '';
+  document.getElementById('aiError').classList.remove('show');
+  document.getElementById('aiGenerateBtn').disabled = false;
+  openModal('aiModal');
+}
+
+async function generateAIBlock() {
+  const prompt = document.getElementById('aiPromptTA').value.trim();
+  if (!prompt) return;
+  const btn = document.getElementById('aiGenerateBtn');
+  const spinner = document.getElementById('aiSpinner');
+  const errEl = document.getElementById('aiError');
+  btn.disabled = true; spinner.classList.add('show'); errEl.classList.remove('show');
+
+  try {
+    const resp = await fetch('/api/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        system: `You are a content generator for a tabletop RPG GM screen builder. Generate reference content as structured JSON.
+
+Return ONLY a valid JSON object, no markdown fences, no preamble:
+{"type":"table"|"list"|"text","content":{...}}
+
+table content: {"headers":["Col1",...],"rows":[["cell",...],...]}
+list content:  {"ordered":true|false,"items":["item1",...]}
+text content:  {"text":"the content"}
+
+Use table for structured data with clear columns, list for enumerations, text for rule paragraphs. Keep content concise and print-friendly.`,
+        messages: [{ role: 'user', content: 'Generate: ' + prompt }]
+      })
+    });
+
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error.message);
+    const text = (data.content || []).map(c => c.text || '').join('');
+    const blockDef = safeParseJSON(text);
+    if (!blockDef.type || !blockDef.content) throw new Error('Unexpected response format');
+
+    B.pendingBlock = blockDef;
+    closeModal('aiModal');
+    showReviewModal(blockDef);
+
+  } catch (err) {
+    errEl.textContent = 'Error: ' + (err.message || 'Generation failed. Try again.');
+    errEl.classList.add('show');
+    btn.disabled = false;
+  } finally {
+    spinner.classList.remove('show');
+  }
+}
+
+// ── Review modal ────────────────────────────────────
+function showReviewModal(blockDef) {
+  document.getElementById('reviewPreview').innerHTML = renderBlockHTML(blockDef);
+  document.getElementById('reviewJsonTA').value = JSON.stringify(blockDef, null, 2);
+  document.getElementById('reviewEditArea').classList.remove('open');
+  document.getElementById('reviewEditBtn').textContent = 'Edit JSON';
+  document.getElementById('reviewJsonError').classList.remove('show');
+  openModal('reviewModal');
+}
+
+function toggleReviewEdit() {
+  const area = document.getElementById('reviewEditArea');
+  const btn  = document.getElementById('reviewEditBtn');
+  const open = area.classList.toggle('open');
+  btn.textContent = open ? 'Hide Editor' : 'Edit JSON';
+  if (open && B.pendingBlock) {
+    document.getElementById('reviewJsonTA').value = JSON.stringify(B.pendingBlock, null, 2);
+  }
+}
+
+function placeBlock() {
+  const editArea = document.getElementById('reviewEditArea');
+  const errEl = document.getElementById('reviewJsonError');
+  errEl.classList.remove('show');
+
+  if (editArea.classList.contains('open')) {
+    try {
+      const parsed = JSON.parse(document.getElementById('reviewJsonTA').value);
+      if (!parsed.type || !parsed.content) throw new Error('Missing type or content field');
+      B.pendingBlock = parsed;
+      document.getElementById('reviewPreview').innerHTML = renderBlockHTML(parsed);
+    } catch (err) {
+      errEl.textContent = 'Invalid JSON: ' + err.message;
+      errEl.classList.add('show');
+      return;
+    }
+  }
+
+  if (!B.pendingBlock) return;
+  addBlock(B.pendingBlock);
+  B.pendingBlock = null;
+  closeModal('reviewModal');
+}
+
+// ── Utilities ────────────────────────────────────────
+function safeParseJSON(text) {
+  let s = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  const start = s.indexOf('{');
+  const end   = s.lastIndexOf('}');
+  if (start >= 0 && end > start) s = s.slice(start, end + 1);
+  return JSON.parse(s);
+}
+
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ── Save project ────────────────────────────────────
+function saveProject() {
+  const data = {
+    version: 1, name: S.name, orientation: S.orientation, count: S.count,
+    paper: S.paper, customW: S.customW, customH: S.customH, unit: S.unit,
+    panels: B.panels.map(p => ({
+      id: p.id,
+      blocks: p.blocks.map(b => ({ ...b, content: cleanContentForSave(b) }))
+    }))
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = S.name.replace(/[^a-z0-9]/gi, '-').toLowerCase() + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function cleanContentForSave(block) {
+  // Strip large base64 image data from saves to keep files reasonable
+  if (block.type === 'image' && block.content.src && block.content.src.length > 1000) {
+    return { ...block.content, src: '[embedded image — re-upload to restore]' };
+  }
+  return block.content;
+}
+
+// ── Print ────────────────────────────────────────────
+function printScreen() {
+  const printArea = document.getElementById('print-area');
+  printArea.innerHTML = '';
+
+  document.documentElement.style.setProperty('--print-w', paperW_in + 'in');
+  document.documentElement.style.setProperty('--print-h', paperH_in + 'in');
+
+  B.panels.forEach(panel => {
+    const page = document.createElement('div');
+    page.className = 'print-page';
+    page.style.cssText = `width:${paperW_in}in;height:${paperH_in}in;`;
+
+    panel.blocks.forEach(block => {
+      const el = document.createElement('div');
+      el.className = 'print-block';
+      el.style.cssText = `
+        left:${block.x}%; top:${block.y}%; width:${block.w}%; height:${block.h}%;
+        font-size:${block.fontSize || 9}pt; padding:3pt 4pt;`;
+      el.innerHTML = renderBlockHTMLForPrint(block);
+      page.appendChild(el);
+    });
+
+    printArea.appendChild(page);
+  });
+
+  window.print();
+}
+
+function renderBlockHTMLForPrint(block) {
+  switch (block.type) {
+    case 'table': {
+      const { headers = [], rows = [] } = block.content;
+      let h = '<table style="border-collapse:collapse;width:100%;font-size:inherit"><thead><tr>';
+      headers.forEach(c => { h += `<th style="border:0.5pt solid #888;padding:2pt 4pt;background:#eee;text-align:left;font-size:inherit">${esc(c)}</th>`; });
+      h += '</tr></thead><tbody>';
+      rows.forEach((row, ri) => {
+        h += `<tr${ri%2===1?' style="background:#f5f5f5"':''}>`;
+        row.forEach(cell => { h += `<td style="border:0.5pt solid #bbb;padding:2pt 4pt;font-size:inherit;vertical-align:top">${esc(cell)}</td>`; });
+        h += '</tr>';
+      });
+      return h + '</tbody></table>';
+    }
+    case 'list': {
+      const { ordered = false, items = [] } = block.content;
+      const tag = ordered ? 'ol' : 'ul';
+      let h = `<${tag} style="padding-left:1em;margin:0;font-size:inherit">`;
+      items.forEach(item => { h += `<li style="margin-bottom:1pt;font-size:inherit">${esc(item)}</li>`; });
+      return h + `</${tag}>`;
+    }
+    case 'text': return `<div style="white-space:pre-wrap;font-size:inherit">${esc(block.content.text || '')}</div>`;
+    case 'image': return `<img src="${block.content.src || ''}" style="max-width:100%;max-height:100%;object-fit:contain" alt="" />`;
+    default: return '';
+  }
+}
+</script>
+</body>
+</html>
