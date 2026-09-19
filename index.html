@@ -198,6 +198,7 @@ body.builder-mode { align-items: stretch; }
   flex-direction: column;
   width: 100%;
   flex: 1;
+  min-height: 0;
 }
 .builder.active { display: flex; }
 
@@ -226,7 +227,7 @@ body.builder-mode { align-items: stretch; }
 .panel-tab:hover { border-color: var(--accent-border); color: var(--text); }
 .panel-tab.active { border-color: var(--accent); background: var(--purple-mid); color: var(--accent); font-weight: 600; }
 
-/* Canvas wrapper */
+/* Canvas wrapper — scrollable, pinch-zoom handled in JS */
 .canvas-wrapper {
   flex: 1;
   display: flex;
@@ -234,6 +235,9 @@ body.builder-mode { align-items: stretch; }
   justify-content: center;
   padding: 20px 16px 12px;
   overflow: auto;
+  min-height: 0;
+  /* allow JS to capture two-finger pinch while browser handles single-finger scroll */
+  touch-action: pan-x pan-y;
 }
 
 /* The WYSIWYG canvas — sized by JS */
@@ -243,6 +247,8 @@ body.builder-mode { align-items: stretch; }
   flex-shrink: 0;
   box-shadow: 0 4px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08);
   border-radius: 2px;
+  transform-origin: top left;
+  will-change: transform;
 }
 .canvas-empty-hint {
   position: absolute; inset: 0;
@@ -253,6 +259,24 @@ body.builder-mode { align-items: stretch; }
   pointer-events: none;
 }
 .canvas-empty-hint .big-icon { font-size: 2.5rem; opacity: 0.4; }
+
+/* Zoom indicator */
+.zoom-indicator {
+  position: fixed;
+  bottom: 90px;
+  right: 16px;
+  background: rgba(0,0,0,0.7);
+  color: var(--accent);
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--accent-border);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 50;
+}
+.zoom-indicator.show { opacity: 1; }
 
 /* Blocks */
 .block-wrapper {
@@ -710,6 +734,9 @@ body.builder-mode { align-items: stretch; }
     </div>
   </div>
 
+  <!-- Zoom indicator (shown briefly during pinch) -->
+  <div class="zoom-indicator" id="zoomIndicator">100%</div>
+
   <!-- Overflow warning -->
   <div class="overflow-warning" id="overflowWarning">⚠ Content extends beyond the panel area</div>
 
@@ -733,7 +760,7 @@ body.builder-mode { align-items: stretch; }
 <div class="modal-overlay" id="imgModal">
   <div class="modal-box">
     <div class="modal-title">Select a region to extract</div>
-    <p class="modal-hint">Drag to draw a box around the content you want to capture.</p>
+    <p class="modal-hint">Drag to draw a box around the content you want — or tap <strong>Select All</strong> for the whole image.</p>
     <div class="img-capture-container" id="imgCaptureContainer">
       <img id="captureImg" alt="Captured source" />
       <div id="selectionRect"></div>
@@ -746,6 +773,7 @@ body.builder-mode { align-items: stretch; }
     <div class="error-msg" id="ocrError"></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('imgModal')">Cancel</button>
+      <button class="btn btn-ghost" onclick="selectEntireImage()">Select All</button>
       <button class="btn btn-primary" id="extractBtn" disabled onclick="extractRegion()">Extract →</button>
     </div>
   </div>
@@ -963,6 +991,11 @@ let canvasW = 0, canvasH = 0;
 let paperW_in = 0, paperH_in = 0;
 let blockIdCounter = 1;
 
+// Pinch-to-zoom state
+let canvasZoom = 1.0;
+let lastPinchDist = null;
+let zoomHideTimer = null;
+
 function newBlockId() { return 'b' + (blockIdCounter++); }
 
 // ── Launch ──────────────────────────────────────────
@@ -989,6 +1022,17 @@ function launchBuilder() {
   document.getElementById('headerBadge').textContent = S.name;
   document.getElementById('headerBadge').style.display = 'block';
 
+  // Attach pinch-to-zoom on the canvas wrapper
+  setupPinchZoom();
+
+  // Lock orientation on landscape panels (Android Chrome supports this;
+  // iOS Safari will silently fail and that's fine)
+  if (S.orientation === 'landscape') {
+    try {
+      screen.orientation.lock('landscape').catch(() => {});
+    } catch(e) {}
+  }
+
   renderPanel(0);
 }
 
@@ -1001,6 +1045,50 @@ function calcCanvasSize() {
   const scale = Math.min(maxW / rawW, maxH / rawH);
   canvasW = Math.round(rawW * scale);
   canvasH = Math.round(rawH * scale);
+}
+
+// ── Pinch-to-zoom ────────────────────────────────────
+function setupPinchZoom() {
+  const wrapper = document.getElementById('canvasWrapper');
+  const canvas  = document.getElementById('panelCanvas');
+  const zoomEl  = document.getElementById('zoomIndicator');
+
+  function getPinchDist(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function applyZoom(z) {
+    canvasZoom = Math.max(0.5, Math.min(4.0, z));
+    canvas.style.transform = `scale(${canvasZoom})`;
+    // Show zoom indicator briefly
+    zoomEl.textContent = Math.round(canvasZoom * 100) + '%';
+    zoomEl.classList.add('show');
+    clearTimeout(zoomHideTimer);
+    zoomHideTimer = setTimeout(() => zoomEl.classList.remove('show'), 1200);
+  }
+
+  wrapper.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      lastPinchDist = getPinchDist(e.touches);
+    }
+  }, { passive: true });
+
+  wrapper.addEventListener('touchmove', e => {
+    if (e.touches.length === 2 && lastPinchDist !== null) {
+      e.preventDefault();
+      const dist = getPinchDist(e.touches);
+      if (dist > 0) {
+        applyZoom(canvasZoom * (dist / lastPinchDist));
+        lastPinchDist = dist;
+      }
+    }
+  }, { passive: false });
+
+  wrapper.addEventListener('touchend', e => {
+    if (e.touches.length < 2) lastPinchDist = null;
+  }, { passive: true });
 }
 
 // ── Panel tabs ──────────────────────────────────────
@@ -1025,13 +1113,34 @@ function switchPanel(idx) {
 // ── Panel rendering ─────────────────────────────────
 function renderPanel(idx) {
   const canvas = document.getElementById('panelCanvas');
-  // Keep the empty hint div, remove block wrappers
   canvas.querySelectorAll('.block-wrapper').forEach(el => el.remove());
   const panel = B.panels[idx];
   const hint = document.getElementById('canvasHint');
   hint.style.display = panel.blocks.length === 0 ? 'flex' : 'none';
-  panel.blocks.forEach(block => canvas.appendChild(createBlockEl(block)));
+  panel.blocks.forEach(block => {
+    const el = createBlockEl(block);
+    canvas.appendChild(el);
+    // Auto-trim after render so height fits actual content
+    autoTrimBlock(block, el);
+  });
   checkOverflow();
+}
+
+// ── Auto-trim block height to content ───────────────
+function autoTrimBlock(block, wrapperEl) {
+  requestAnimationFrame(() => {
+    const inner = wrapperEl.querySelector('.block-inner');
+    if (!inner) return;
+    // Measure how much height the content actually needs
+    const contentH = inner.scrollHeight;
+    const neededPx  = contentH + 18 + 6; // 18px handle + 6px padding buffer
+    const neededPct = neededPx / canvasH * 100;
+    // Only shrink — never expand beyond the user's set size
+    if (neededPct < block.h - 1) {
+      block.h = Math.max(neededPct, 6);
+      wrapperEl.style.height = block.h + '%';
+    }
+  });
 }
 
 // ── Block element ───────────────────────────────────
@@ -1045,19 +1154,16 @@ function createBlockEl(block) {
   wrapper.style.height = block.h + '%';
   wrapper.style.fontSize = (block.fontSize || 9) + 'pt';
 
-  // Drag handle
   const handle = document.createElement('div');
   handle.className = 'block-drag-handle';
   handle.innerHTML = `
     <span class="drag-type-label">${block.type.toUpperCase()}</span>
     <button class="block-delete-btn" onclick="deleteBlock('${block.id}')">✕</button>`;
 
-  // Inner content
   const inner = document.createElement('div');
   inner.className = 'block-inner';
   inner.innerHTML = renderBlockHTML(block);
 
-  // Resize handle
   const resizeH = document.createElement('div');
   resizeH.className = 'block-resize-handle';
 
@@ -1114,8 +1220,9 @@ function setupBlockDrag(wrapper, block) {
   };
   const onMove = (cx, cy) => {
     if (!dragging) return;
-    const dx = (cx - startX) / canvasW * 100;
-    const dy = (cy - startY) / canvasH * 100;
+    // Divide by canvasZoom so drag distance matches visual canvas scale
+    const dx = (cx - startX) / (canvasW * canvasZoom) * 100;
+    const dy = (cy - startY) / (canvasH * canvasZoom) * 100;
     block.x = Math.max(0, Math.min(100 - block.w, origX + dx));
     block.y = Math.max(0, Math.min(100 - block.h, origY + dy));
     wrapper.style.left = block.x + '%';
@@ -1136,6 +1243,7 @@ function setupBlockDrag(wrapper, block) {
 
   wrapper.addEventListener('touchstart', e => {
     if (e.target.classList.contains('block-delete-btn') || e.target.classList.contains('block-resize-handle')) return;
+    if (e.touches.length !== 1) return; // let two-finger pinch pass through
     e.preventDefault();
     const t = e.touches[0];
     onStart(t.clientX, t.clientY);
@@ -1151,8 +1259,9 @@ function setupBlockResize(handle, wrapper, block) {
   const onStart = (startX, startY) => {
     const origW = block.w, origH = block.h;
     const onMove = (mx, my) => {
-      const dx = (mx - startX) / canvasW * 100;
-      const dy = (my - startY) / canvasH * 100;
+      // Divide by canvasZoom so resize matches visual canvas scale
+      const dx = (mx - startX) / (canvasW * canvasZoom) * 100;
+      const dy = (my - startY) / (canvasH * canvasZoom) * 100;
       block.w = Math.max(8, Math.min(100 - block.x, origW + dx));
       block.h = Math.max(6, Math.min(100 - block.y, origH + dy));
       wrapper.style.width  = block.w + '%';
@@ -1173,8 +1282,8 @@ function setupBlockResize(handle, wrapper, block) {
     const origW = block.w, origH = block.h;
     const tm = e2 => {
       const t2 = e2.touches[0];
-      const dx = (t2.clientX - startX) / canvasW * 100;
-      const dy = (t2.clientY - startY) / canvasH * 100;
+      const dx = (t2.clientX - startX) / (canvasW * canvasZoom) * 100;
+      const dy = (t2.clientY - startY) / (canvasH * canvasZoom) * 100;
       block.w = Math.max(8, Math.min(100 - block.x, origW + dx));
       block.h = Math.max(6, Math.min(100 - block.y, origH + dy));
       wrapper.style.width  = block.w + '%';
@@ -1194,15 +1303,22 @@ function deleteBlock(id) {
   renderPanel(B.currentPanel);
 }
 
+// Auto-reflow: new block drops just below the lowest existing block
 function getDropPos(w, h) {
   const panel = B.panels[B.currentPanel];
   let maxY = 2;
-  panel.blocks.forEach(b => { maxY = Math.max(maxY, b.y + b.h + 1); });
-  return { x: 5, y: maxY };
+  panel.blocks.forEach(b => {
+    maxY = Math.max(maxY, b.y + b.h + 1);
+  });
+  // If the new block would go off-screen, wrap to top-right column area
+  if (maxY + h > 98) {
+    return { x: 52, y: 2 };
+  }
+  return { x: 3, y: maxY };
 }
 
 function addBlock(def) {
-  const w = def.w || 90;
+  const w = def.w || 93;
   const h = def.h || estimateBlockHeight(def);
   const pos = getDropPos(w, h);
   const block = {
@@ -1238,7 +1354,6 @@ function openUploadModal() { triggerFilePick(false); }
 function openCameraModal()  { triggerFilePick(true);  }
 
 function triggerFilePick(camera) {
-  // Must be in the DOM before .click() works inside a sandboxed iframe
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
@@ -1267,7 +1382,6 @@ function openImageModal(src) {
   const container = document.getElementById('imgCaptureContainer');
   resetSelection();
   img.onload = () => {
-    // Size container to match image aspect ratio, scaled to fit
     const maxW = Math.min(window.innerWidth - 80, 560);
     const maxH = Math.min(window.innerHeight * 0.45, 380);
     const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
@@ -1286,8 +1400,19 @@ function resetSelection() {
   B.selectionCoords = null;
   document.getElementById('selectionRect').style.display = 'none';
   document.getElementById('extractBtn').disabled = true;
-  document.getElementById('captureInstructions').textContent = 'Draw a selection to continue';
+  document.getElementById('captureInstructions').textContent = 'Draw a selection or tap Select All';
   document.getElementById('ocrError').classList.remove('show');
+}
+
+// ── Select entire image ──────────────────────────────
+function selectEntireImage() {
+  const container = document.getElementById('imgCaptureContainer');
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  if (!w || !h) return;
+  updateSelRect({ x: 0, y: 0 }, { x: w, y: h });
+  finishSelection({ x: 0, y: 0 }, { x: w, y: h });
+  document.getElementById('captureInstructions').textContent = 'Entire image selected — click Extract';
 }
 
 // Region selection
@@ -1398,7 +1523,7 @@ table content: {"headers":["Col1",...],"rows":[["cell",...],...]}
 list content:  {"ordered":true|false,"items":["item1",...]}
 text content:  {"text":"the extracted text"}
 
-Choose the type that best matches the visual structure. Tables for columnar data, lists for enumerated items, text for paragraphs and rules.`,
+Choose the type that best matches the visual structure. Tables for columnar data, lists for enumerated items, text for paragraphs and rules. Trim all leading and trailing whitespace from every cell and item.`,
         messages: [{
           role: 'user',
           content: [
@@ -1460,7 +1585,7 @@ table content: {"headers":["Col1",...],"rows":[["cell",...],...]}
 list content:  {"ordered":true|false,"items":["item1",...]}
 text content:  {"text":"the content"}
 
-Use table for structured data with clear columns, list for enumerations, text for rule paragraphs. Keep content concise and print-friendly.`,
+Use table for structured data with clear columns, list for enumerations, text for rule paragraphs. Keep content concise and print-friendly. Trim all whitespace from cells and items.`,
         messages: [{ role: 'user', content: 'Generate: ' + prompt }]
       })
     });
@@ -1559,7 +1684,6 @@ function saveProject() {
 }
 
 function cleanContentForSave(block) {
-  // Strip large base64 image data from saves to keep files reasonable
   if (block.type === 'image' && block.content.src && block.content.src.length > 1000) {
     return { ...block.content, src: '[embedded image — re-upload to restore]' };
   }
